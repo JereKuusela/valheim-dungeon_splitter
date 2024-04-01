@@ -12,7 +12,8 @@ public class DungeonSplitter : BaseUnityPlugin
 {
   public const string GUID = "dungeon_splitter";
   public const string NAME = "Dungeon Splitter";
-  public const string VERSION = "1.0";
+  public const string VERSION = "1.1";
+  public const float DungeonHeight = 1500f;
 #nullable disable
   public static ConfigEntry<string> configAlwaysSend;
 #nullable enable
@@ -61,7 +62,7 @@ public class CreateSyncList
 {
   static void Prefix(ZDOMan.ZDOPeer peer)
   {
-    FindObjects.InDungeon = peer.m_peer.m_refPos.y >= 3000f;
+    FindObjects.InDungeon = peer.m_peer.m_refPos.y >= DungeonSplitter.DungeonHeight;
     FindObjects.SendDungeons = true;
   }
 }
@@ -70,7 +71,7 @@ public class ReleaseNearbyZDOS
 {
   static void Prefix(Vector3 refPosition)
   {
-    FindObjects.InDungeon = refPosition.y >= 3000f;
+    FindObjects.InDungeon = refPosition.y >= DungeonSplitter.DungeonHeight;
     FindObjects.SendDungeons = false;
   }
 }
@@ -79,7 +80,7 @@ public class CreateDestroyObjects
 {
   static void Prefix()
   {
-    FindObjects.InDungeon = ZNet.instance.GetReferencePosition().y >= 3000f;
+    FindObjects.InDungeon = ZNet.instance.GetReferencePosition().y >= DungeonSplitter.DungeonHeight;
     FindObjects.SendDungeons = false;
   }
 }
@@ -88,7 +89,7 @@ public class IsAreaReady
 {
   static void Prefix(Vector3 point)
   {
-    FindObjects.InDungeon = point.y >= 3000f;
+    FindObjects.InDungeon = point.y >= DungeonSplitter.DungeonHeight;
     FindObjects.SendDungeons = false;
   }
 }
@@ -120,7 +121,7 @@ public class FindObjects
 
   public static bool IsOk(ZDO zdo)
   {
-    return TeleportHashes.Contains(zdo.m_prefab) || (InDungeon == (zdo.m_position.y >= 3000f)) || (SendDungeons && DungeonHashes.Contains(zdo.m_prefab));
+    return TeleportHashes.Contains(zdo.m_prefab) || (InDungeon == (zdo.m_position.y >= DungeonSplitter.DungeonHeight)) || (SendDungeons && DungeonHashes.Contains(zdo.m_prefab));
   }
 }
 
@@ -136,12 +137,12 @@ public class FindDistantObjects
       var list = __instance.m_objectsBySector[num];
       if (list == null)
         return false;
-      objects.AddRange(list.Where(zdo => zdo.Distant && (zdo.m_position.y >= 3000f) == FindObjects.InDungeon).ToList());
+      objects.AddRange(list.Where(zdo => zdo.Distant && (zdo.m_position.y >= DungeonSplitter.DungeonHeight) == FindObjects.InDungeon).ToList());
       return false;
     }
     if (__instance.m_objectsByOutsideSector.TryGetValue(sector, out var collection))
     {
-      objects.AddRange(collection.Where(zdo => zdo.Distant && (zdo.m_position.y >= 3000f) == FindObjects.InDungeon).ToList());
+      objects.AddRange(collection.Where(zdo => zdo.Distant && (zdo.m_position.y >= DungeonSplitter.DungeonHeight) == FindObjects.InDungeon).ToList());
     }
     return false;
   }
