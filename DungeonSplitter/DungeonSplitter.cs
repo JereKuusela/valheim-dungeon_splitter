@@ -12,16 +12,20 @@ public class DungeonSplitter : BaseUnityPlugin
 {
   public const string GUID = "dungeon_splitter";
   public const string NAME = "Dungeon Splitter";
-  public const string VERSION = "1.2";
-  public const float DungeonHeight = 1500f;
+  public const string VERSION = "1.3";
 #nullable disable
   public static ConfigEntry<string> configAlwaysSend;
+  public static ConfigEntry<float> configDungeonHeight;
 #nullable enable
+
+  public static float DungeonHeight => configDungeonHeight.Value;
 
   public void Awake()
   {
     configAlwaysSend = Config.Bind("General", "Always send", "", "List of object ids that are always sent to clients. Separate with commas.");
     configAlwaysSend.SettingChanged += (sender, args) => DungeonPrefabs.Postfix();
+    configDungeonHeight = Config.Bind("General", "Dungeon height", 1500f, "Height at which the dungeon starts.");
+
     SetupWatcher();
     new Harmony(GUID).PatchAll();
   }
@@ -62,10 +66,12 @@ public class CreateSyncList
 {
   static void Prefix(ZDOMan.ZDOPeer peer)
   {
-    FindObjects.InDungeon = peer.m_peer.m_refPos.y >= DungeonSplitter.DungeonHeight;
+    StateManager.Check(peer.m_peer.m_refPos);
     FindObjects.IsSending = true;
   }
 }
+
+// Server side code, called every 2 seconds.
 [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.ReleaseNearbyZDOS))]
 public class ReleaseNearbyZDOS
 {
@@ -76,7 +82,7 @@ public class ReleaseNearbyZDOS
   static bool Prefix(ZDOMan __instance, Vector3 refPosition, long uid)
   {
     var zm = __instance;
-    FindObjects.InDungeon = refPosition.y >= DungeonSplitter.DungeonHeight;
+    StateManager.Check(refPosition);
     FindObjects.IsSending = false;
 
     Vector2i playerZone = ZoneSystem.instance.GetZone(refPosition);
@@ -94,16 +100,16 @@ public class ReleaseNearbyZDOS
         if (num >= 0)
         {
           if (zm.m_objectsBySector[num] != null)
-            Process(zm, zm.m_objectsBySector[num], sector, uid, FindObjects.InDungeon);
+            Process(zm, zm.m_objectsBySector[num], sector, uid);
         }
         else if (zm.m_objectsByOutsideSector.TryGetValue(sector, out var list))
-          Process(zm, list, sector, uid, FindObjects.InDungeon);
+          Process(zm, list, sector, uid);
       }
     }
     return false;
   }
 
-  static void Process(ZDOMan zm, List<ZDO> objects, Vector2i zone, long uid, bool inDungeon)
+  static void Process(ZDOMan zm, List<ZDO> objects, Vector2i zone, long uid)
   {
     foreach (ZDO zdo in objects)
     {
@@ -111,7 +117,7 @@ public class ReleaseNearbyZDOS
       // TeleportHashes or DungeonHashes are not used because clients don't need ownership of those objects.
       // If some mod needs it, the client probably already claims the ownership.
       var zdoInDungeon = zdo.m_position.y >= DungeonSplitter.DungeonHeight;
-      var sameLevel = zdoInDungeon == inDungeon;
+      var sameLevel = zdoInDungeon ? StateManager.InDungeon : StateManager.OnGround;
       if (zdo.GetOwner() == uid)
       {
         if (!sameLevel || !ZNetScene.InActiveArea(zdo.GetSector(), zone))
@@ -131,21 +137,35 @@ public class ReleaseNearbyZDOS
     return peer != null && peer.m_refPos.y >= DungeonSplitter.DungeonHeight == inDungeon;
   }
 }
+// Client code, called 30 times per second.
 [HarmonyPatch(typeof(ZNetScene), nameof(ZNetScene.CreateDestroyObjects))]
 public class CreateDestroyObjects
 {
+  private static double LastCheck;
+  private static bool AnyNearby;
   static void Prefix()
   {
-    FindObjects.InDungeon = ZNet.instance.GetReferencePosition().y >= DungeonSplitter.DungeonHeight;
+    if (!Player.m_localPlayer) return;
+    var time = ZNet.instance.m_netTime;
+    if (time - LastCheck > 5f)
+    {
+      LastCheck = time;
+      AnyNearby = ZNet.instance.GetPeers().Any(peer => peer.IsReady() && Utils.DistanceXZ(peer.m_refPos, Player.m_localPlayer.transform.position) < 200f);
+    }
+    if (AnyNearby)
+      StateManager.CheckForRemove(Player.m_localPlayer.transform.position);
+    else
+      StateManager.Check(Player.m_localPlayer.transform.position);
     FindObjects.IsSending = false;
   }
 }
+// Client code, used for teleporting.
 [HarmonyPatch(typeof(ZNetScene), nameof(ZNetScene.IsAreaReady))]
 public class IsAreaReady
 {
   static void Prefix(Vector3 point)
   {
-    FindObjects.InDungeon = point.y >= DungeonSplitter.DungeonHeight;
+    StateManager.Check(point);
     FindObjects.IsSending = false;
   }
 }
@@ -156,7 +176,6 @@ public class FindObjects
   public static HashSet<int> AlwaysSend = [];
   public static HashSet<int> AlwaysLoad = [];
   public static bool IsSending;
-  public static bool InDungeon;
   static bool Prefix(ZDOMan __instance, Vector2i sector, List<ZDO> objects)
   {
     int num = __instance.SectorToIndex(sector);
@@ -177,7 +196,7 @@ public class FindObjects
 
   public static bool IsOk(ZDO zdo)
   {
-    return AlwaysLoad.Contains(zdo.m_prefab) || (InDungeon == (zdo.m_position.y >= DungeonSplitter.DungeonHeight)) || (IsSending && AlwaysSend.Contains(zdo.m_prefab));
+    return AlwaysLoad.Contains(zdo.m_prefab) || StateManager.IsSameLevel(zdo.m_position) || (IsSending && AlwaysSend.Contains(zdo.m_prefab));
   }
 }
 
@@ -193,12 +212,12 @@ public class FindDistantObjects
       var list = __instance.m_objectsBySector[num];
       if (list == null)
         return false;
-      objects.AddRange(list.Where(zdo => zdo.Distant && (zdo.m_position.y >= DungeonSplitter.DungeonHeight) == FindObjects.InDungeon).ToList());
+      objects.AddRange(list.Where(zdo => zdo.Distant && StateManager.IsSameLevel(zdo.m_position)).ToList());
       return false;
     }
     if (__instance.m_objectsByOutsideSector.TryGetValue(sector, out var collection))
     {
-      objects.AddRange(collection.Where(zdo => zdo.Distant && (zdo.m_position.y >= DungeonSplitter.DungeonHeight) == FindObjects.InDungeon).ToList());
+      objects.AddRange(collection.Where(zdo => zdo.Distant && StateManager.IsSameLevel(zdo.m_position)).ToList());
     }
     return false;
   }
@@ -220,4 +239,47 @@ public class DungeonPrefabs
       FindObjects.AlwaysSend.Add(str.GetStableHashCode());
     FindObjects.AlwaysSend.Add(PlayerHash);
   }
+}
+
+// Goal is to track whether the player is in the dungeon or not.
+// When client is removing objects, the transition must be delayed to give more time for ownership transfer.
+public class StateManager
+{
+
+  public static bool InDungeon;
+  public static bool OnGround;
+  public static double LastDungeon;
+  public static double LastGround;
+
+  const double Delay = 2.5;
+
+  public static bool IsSameLevel(Vector3 pos)
+  {
+    var inDungeon = pos.y >= DungeonSplitter.DungeonHeight;
+    return inDungeon ? InDungeon : OnGround;
+  }
+  public static void Check(Vector3 pos)
+  {
+    var inDungeon = pos.y >= DungeonSplitter.DungeonHeight;
+    InDungeon = inDungeon;
+    OnGround = !inDungeon;
+  }
+  public static void CheckForRemove(Vector3 pos)
+  {
+    var inDungeon = pos.y >= DungeonSplitter.DungeonHeight;
+    var time = ZNet.instance.m_netTime;
+    if (inDungeon)
+    {
+      InDungeon = true;
+      LastDungeon = time;
+      OnGround = time - LastGround <= Delay;
+    }
+    else
+    {
+      OnGround = true;
+      LastGround = time;
+      InDungeon = time - LastDungeon <= Delay;
+    }
+  }
+
 }
