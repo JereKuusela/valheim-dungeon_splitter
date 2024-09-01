@@ -1,3 +1,6 @@
+- v1.4
+  - Removes log spam of "Any nearby".
+
 - v1.3
   - Delays unloading of objects by 2.5 seconds to prevent desync issues.
 

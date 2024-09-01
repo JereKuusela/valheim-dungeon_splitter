@@ -12,7 +12,7 @@ public class DungeonSplitter : BaseUnityPlugin
 {
   public const string GUID = "dungeon_splitter";
   public const string NAME = "Dungeon Splitter";
-  public const string VERSION = "1.3";
+  public const string VERSION = "1.4";
 #nullable disable
   public static ConfigEntry<string> configAlwaysSend;
   public static ConfigEntry<float> configDungeonHeight;
@@ -150,7 +150,8 @@ public class CreateDestroyObjects
     if (time - LastCheck > 5f)
     {
       LastCheck = time;
-      AnyNearby = ZNet.instance.GetPeers().Any(peer => peer.IsReady() && Utils.DistanceXZ(peer.m_refPos, Player.m_localPlayer.transform.position) < 200f);
+      // Technically 200 meters should be enough, but it's better to be safe.
+      AnyNearby = ZNet.instance.GetPeers().Any(peer => peer.IsReady() && Utils.DistanceXZ(peer.m_refPos, Player.m_localPlayer.transform.position) < 300f);
     }
     if (AnyNearby)
       StateManager.CheckForRemove(Player.m_localPlayer.transform.position);
