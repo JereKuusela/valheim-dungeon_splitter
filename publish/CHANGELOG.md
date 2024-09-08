@@ -1,3 +1,6 @@
+- v1.5
+  - Possibly fixes dungeon entering issue.
+
 - v1.4
   - Removes log spam of "Any nearby".
 
