@@ -1,6 +1,6 @@
 {
   "name": "Dungeon_Splitter",
-  "version_number": "1.5.0",
+  "version_number": "1.6.0",
   "website_url": "https://github.com/JereKuusela/valheim-dungeon_splitter",
   "description": "Separates dungeons from the main world reducing the amount of instances.",
   "dependencies": [

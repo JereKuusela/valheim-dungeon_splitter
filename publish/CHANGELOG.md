@@ -1,3 +1,6 @@
+- v1.6
+  - Fixed for the new game version.
+
 - v1.5
   - Possibly fixes dungeon entering issue.
 

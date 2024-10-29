@@ -12,7 +12,7 @@ public class DungeonSplitter : BaseUnityPlugin
 {
   public const string GUID = "dungeon_splitter";
   public const string NAME = "Dungeon Splitter";
-  public const string VERSION = "1.5";
+  public const string VERSION = "1.6";
 #nullable disable
   public static ConfigEntry<string> configAlwaysSend;
   public static ConfigEntry<float> configDungeonHeight;
@@ -85,7 +85,7 @@ public class ReleaseNearbyZDOS
     StateManager.Check(refPosition);
     FindObjects.IsSending = false;
 
-    Vector2i playerZone = ZoneSystem.instance.GetZone(refPosition);
+    Vector2i playerZone = ZoneSystem.GetZone(refPosition);
     int area = ZoneSystem.instance.m_activeArea;
     var xStart = playerZone.x - area;
     var yStart = playerZone.y - area;
