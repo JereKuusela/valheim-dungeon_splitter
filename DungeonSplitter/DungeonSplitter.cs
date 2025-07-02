@@ -12,7 +12,7 @@ public class DungeonSplitter : BaseUnityPlugin
 {
   public const string GUID = "dungeon_splitter";
   public const string NAME = "Dungeon Splitter";
-  public const string VERSION = "1.6";
+  public const string VERSION = "1.7";
 #nullable disable
   public static ConfigEntry<string> configAlwaysSend;
   public static ConfigEntry<float> configDungeonHeight;
@@ -76,7 +76,7 @@ public class CreateSyncList
 public class ReleaseNearbyZDOS
 {
   // Unfortunately the original function doesn't work at all.
-  // 1. FindSectorObjects must return all objevts of the nearby zones.
+  // 1. FindSectorObjects must return all objects of the nearby zones.
   // 2. InActiveArea checks can't be overridden to include the y coordinate.
   // 3. This is also more performant because FindObjects is not used that appends lists.
   static bool Prefix(ZDOMan __instance, Vector3 refPosition, long uid)
@@ -185,13 +185,13 @@ public class FindObjects
     {
       if (__instance.m_objectsBySector[num] != null)
       {
-        objects.AddRange(__instance.m_objectsBySector[num].Where(IsOk).ToList());
+        objects.AddRange([.. __instance.m_objectsBySector[num].Where(IsOk)]);
         return false;
       }
     }
     else if (__instance.m_objectsByOutsideSector.TryGetValue(sector, out var collection))
     {
-      objects.AddRange(collection.Where(IsOk).ToList());
+      objects.AddRange([.. collection.Where(IsOk)]);
     }
     return false;
   }
@@ -214,12 +214,12 @@ public class FindDistantObjects
       var list = __instance.m_objectsBySector[num];
       if (list == null)
         return false;
-      objects.AddRange(list.Where(zdo => zdo.Distant && StateManager.IsSameLevel(zdo.m_position)).ToList());
+      objects.AddRange([.. list.Where(zdo => zdo.Distant && StateManager.IsSameLevel(zdo.m_position))]);
       return false;
     }
     if (__instance.m_objectsByOutsideSector.TryGetValue(sector, out var collection))
     {
-      objects.AddRange(collection.Where(zdo => zdo.Distant && StateManager.IsSameLevel(zdo.m_position)).ToList());
+      objects.AddRange([.. collection.Where(zdo => zdo.Distant && StateManager.IsSameLevel(zdo.m_position))]);
     }
     return false;
   }
@@ -230,12 +230,17 @@ public class DungeonPrefabs
 {
   public static int ProxyHash = "LocationProxy".GetStableHashCode();
   public static int PlayerHash = "Player".GetStableHashCode();
+  // Terrain stuff is required for some checks (like during respawn).
+  public static int ZoneCtrlHash = "_ZoneCtrl".GetStableHashCode();
+  public static int TerrainCompilerHash = "_TerrainCompiler".GetStableHashCode();
   public static void Postfix()
   {
-    FindObjects.AlwaysLoad = ZNetScene.instance.m_namedPrefabs.Values.Where(prefab => prefab.GetComponentInChildren<Teleport>()).Select(prefab => prefab.name.GetStableHashCode()).ToHashSet();
+    FindObjects.AlwaysLoad = [.. ZNetScene.instance.m_namedPrefabs.Values.Where(prefab => prefab.GetComponentInChildren<Teleport>()).Select(prefab => prefab.name.GetStableHashCode())];
     FindObjects.AlwaysLoad.Add(ProxyHash);
+    FindObjects.AlwaysLoad.Add(ZoneCtrlHash);
+    FindObjects.AlwaysLoad.Add(TerrainCompilerHash);
 
-    FindObjects.AlwaysSend = ZNetScene.instance.m_namedPrefabs.Values.Where(prefab => prefab.GetComponent<DungeonGenerator>()).Select(prefab => prefab.name.GetStableHashCode()).ToHashSet();
+    FindObjects.AlwaysSend = [.. ZNetScene.instance.m_namedPrefabs.Values.Where(prefab => prefab.GetComponent<DungeonGenerator>()).Select(prefab => prefab.name.GetStableHashCode())];
     var split = DungeonSplitter.configAlwaysSend.Value.Split(',').Select(str => str.Trim()).Where(str => !string.IsNullOrEmpty(str));
     foreach (var str in split)
       FindObjects.AlwaysSend.Add(str.GetStableHashCode());
