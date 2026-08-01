@@ -71,23 +71,22 @@ public class CreateSyncList
   }
 }
 
-// Server side code, called when a peer disconnects.
-[HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.RemovePeer))]
-public class RemovePeer
+public static class OwnershipCleanup
 {
-  static void Prefix(ZDOMan __instance, ZNetPeer netPeer)
-  {
-    if (ZNet.instance == null || !ZNet.instance.IsServer()) return;
-    if (netPeer == null) return;
+  private static readonly HashSet<long> DeadOwners = [];
+  private static readonly Dictionary<long, ZDOID> DeadOwnerPlayers = [];
 
-    long owner = netPeer.m_uid;
-    if (owner == 0L) return;
+  public static int ClearPersistentOwners(ZDOMan zm, long owner, ZDOID exclude, string reason)
+  {
+    if (ZNet.instance == null || !ZNet.instance.IsServer()) return 0;
+    if (zm == null || owner == 0L) return 0;
 
     int cleared = 0;
 
-    foreach (KeyValuePair<ZDOID, ZDO> entry in __instance.m_objectsByID)
+    foreach (KeyValuePair<ZDOID, ZDO> entry in zm.m_objectsByID)
     {
       ZDO zdo = entry.Value;
+      if (zdo.m_uid == exclude) continue;
       if (!zdo.Persistent || !zdo.HasOwner() || zdo.GetOwner() != owner) continue;
 
       zdo.SetOwner(0L);
@@ -95,7 +94,89 @@ public class RemovePeer
     }
 
     if (cleared > 0)
-      ZLog.Log($"Dungeon Splitter cleared ownership from {cleared} persistent ZDOs for disconnected peer {owner}.");
+      ZLog.Log($"Dungeon Splitter cleared ownership from {cleared} persistent ZDOs for {reason} peer {owner}.");
+
+    return cleared;
+  }
+
+  public static void ClearDeadOwner(ZDOID playerZdo, long owner)
+  {
+    if (owner == 0L) return;
+
+    bool alreadyDead = DeadOwnerPlayers.TryGetValue(owner, out ZDOID deadPlayerZdo) && deadPlayerZdo == playerZdo;
+    DeadOwners.Add(owner);
+    DeadOwnerPlayers[owner] = playerZdo;
+    if (alreadyDead) return;
+
+    ClearPersistentOwners(ZDOMan.instance, owner, playerZdo, "dead");
+  }
+
+  public static void ForgetOwner(long owner)
+  {
+    if (owner == 0L) return;
+
+    DeadOwners.Remove(owner);
+    DeadOwnerPlayers.Remove(owner);
+  }
+
+  public static bool IsDeadOwner(long owner) => owner != 0L && DeadOwners.Contains(owner);
+
+  public static bool ShouldSuppressOwnerAssignment(ZDO zdo, long owner)
+  {
+    if (ZNet.instance == null || !ZNet.instance.IsServer()) return false;
+    if (zdo == null || owner == 0L || !IsDeadOwner(owner)) return false;
+    if (!zdo.Persistent || zdo.GetPrefab() == DungeonPrefabs.PlayerHash) return false;
+
+    return true;
+  }
+
+  public static void UpdatePlayerDeathState(ZDO zdo)
+  {
+    if (ZNet.instance == null || !ZNet.instance.IsServer()) return;
+    if (zdo == null || zdo.GetPrefab() != DungeonPrefabs.PlayerHash) return;
+
+    long owner = zdo.GetOwner();
+    if (zdo.GetBool(ZDOVars.s_dead))
+      ClearDeadOwner(zdo.m_uid, owner);
+    else if (DeadOwnerPlayers.TryGetValue(owner, out ZDOID playerZdo) && playerZdo == zdo.m_uid)
+      return;
+    else
+      ForgetOwner(owner);
+  }
+}
+
+// Server side code, prevents dead peers from reclaiming persistent ZDO ownership.
+[HarmonyPatch(typeof(ZDO), nameof(ZDO.SetOwnerInternal))]
+public class DeadOwnerAssignment
+{
+  static void Postfix(ZDO __instance, long uid)
+  {
+    if (!OwnershipCleanup.ShouldSuppressOwnerAssignment(__instance, uid)) return;
+
+    __instance.SetOwner(0L);
+  }
+}
+
+// Server side code, called when player ZDO data changes.
+[HarmonyPatch(typeof(ZDO), nameof(ZDO.Deserialize))]
+public class PlayerDeathState
+{
+  static void Postfix(ZDO __instance)
+  {
+    OwnershipCleanup.UpdatePlayerDeathState(__instance);
+  }
+}
+
+// Server side code, called when a peer disconnects.
+[HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.RemovePeer))]
+public class RemovePeer
+{
+  static void Prefix(ZDOMan __instance, ZNetPeer netPeer)
+  {
+    if (netPeer == null) return;
+
+    OwnershipCleanup.ForgetOwner(netPeer.m_uid);
+    OwnershipCleanup.ClearPersistentOwners(__instance, netPeer.m_uid, ZDOID.None, "disconnected");
   }
 }
 
@@ -109,6 +190,8 @@ public class ReleaseNearbyZDOS
   // 3. This is also more performant because FindObjects is not used that appends lists.
   static bool Prefix(ZDOMan __instance, Vector3 refPosition, long uid)
   {
+    if (OwnershipCleanup.IsDeadOwner(uid)) return false;
+
     var zm = __instance;
     StateManager.Check(refPosition);
     FindObjects.IsSending = false;
