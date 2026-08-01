@@ -71,6 +71,34 @@ public class CreateSyncList
   }
 }
 
+// Server side code, called when a peer disconnects.
+[HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.RemovePeer))]
+public class RemovePeer
+{
+  static void Prefix(ZDOMan __instance, ZNetPeer netPeer)
+  {
+    if (ZNet.instance == null || !ZNet.instance.IsServer()) return;
+    if (netPeer == null) return;
+
+    long owner = netPeer.m_uid;
+    if (owner == 0L) return;
+
+    int cleared = 0;
+
+    foreach (KeyValuePair<ZDOID, ZDO> entry in __instance.m_objectsByID)
+    {
+      ZDO zdo = entry.Value;
+      if (!zdo.Persistent || !zdo.HasOwner() || zdo.GetOwner() != owner) continue;
+
+      zdo.SetOwner(0L);
+      cleared++;
+    }
+
+    if (cleared > 0)
+      ZLog.Log($"Dungeon Splitter cleared ownership from {cleared} persistent ZDOs for disconnected peer {owner}.");
+  }
+}
+
 // Server side code, called every 2 seconds.
 [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.ReleaseNearbyZDOS))]
 public class ReleaseNearbyZDOS
