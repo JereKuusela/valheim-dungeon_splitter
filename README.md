@@ -12,9 +12,9 @@ Recommended to be at least installed on the server.
 
 When only installed on the server:
 
-- Server only sends objects that are on the same layer (reduces amount of instances and network traffic).
-- Server prioritizes object ownership to clients on the same layer.
-- Clients don't unload objects so most of the benefits are lost after entering a dungeon.
+- Server only sends data for objects that are on the same layer (reduces amount of instances and network traffic).
+- Server assigns object ownership only to clients that are on the same layer.
+- Clients don't unload objects so instances are not reduced after exiting a dungeon (but network traffic is still reduced).
 
 When only installed on the client:
 
@@ -24,8 +24,8 @@ When only installed on the client:
 
 When installed on both:
 
-- Server only sends objects that are on the same layer.
-- Server prioritizes object ownership to clients on the same layer.
+- Server only sends data for objects that are on the same layer.
+- Server assigns object ownership only to clients that are on the same layer.
 - Clients only load objects on the same layer.
 
 ## Exceptions
