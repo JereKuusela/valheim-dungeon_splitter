@@ -12,7 +12,7 @@ public class DungeonSplitter : BaseUnityPlugin
 {
   public const string GUID = "dungeon_splitter";
   public const string NAME = "Dungeon Splitter";
-  public const string VERSION = "1.7";
+  public const string VERSION = "1.8";
 #nullable disable
   public static ConfigEntry<string> configAlwaysSend;
   public static ConfigEntry<float> configDungeonHeight;
@@ -82,11 +82,13 @@ public class ReleaseNearbyZDOS
   static bool Prefix(ZDOMan __instance, Vector3 refPosition, long uid)
   {
     var zm = __instance;
+    if (uid == zm.m_sessionID)
+      PruneOwnership(zm);
     StateManager.Check(refPosition);
     FindObjects.IsSending = false;
 
     Vector2i playerZone = ZoneSystem.GetZone(refPosition);
-    int area = ZoneSystem.instance.m_activeArea;
+    int area = ZoneSystem.instance.m_activeArea - 1;
     var xStart = playerZone.x - area;
     var yStart = playerZone.y - area;
     var xEnd = playerZone.x + area;
@@ -100,41 +102,56 @@ public class ReleaseNearbyZDOS
         if (num >= 0)
         {
           if (zm.m_objectsBySector[num] != null)
-            Process(zm, zm.m_objectsBySector[num], sector, uid);
+            Process(zm.m_objectsBySector[num], uid);
         }
         else if (zm.m_objectsByOutsideSector.TryGetValue(sector, out var list))
-          Process(zm, list, sector, uid);
+          Process(list, uid);
       }
     }
     return false;
   }
 
-  static void Process(ZDOMan zm, List<ZDO> objects, Vector2i zone, long uid)
+  // Combines ownership unassignment to handle three issues from original code:
+  // 1. Original code only handles nearby areas (leaving stale ownership data).
+  // 2. Original code repeatedly checks outer areas (even when already unassigned).
+  // 3. Original code checks peer position for each nearby player.
+  static void PruneOwnership(ZDOMan zm)
+  {
+    PlayerCache.Refresh(zm);
+    var toRemove = ZDOExtraData.s_owner.Where(kvp =>
+    {
+      var zdo = zm.GetZDO(kvp.Key);
+      if (zdo == null) return true;
+
+      var owner = zdo.GetOwner();
+      if (!PlayerCache.TryGet(owner, out var ownerCache)) return true;
+      if (zdo.m_position.y >= DungeonSplitter.DungeonHeight != ownerCache.InDungeon) return true;
+
+      var zone = zdo.GetSector();
+      return !ZNetScene.InActiveArea(zone, ownerCache.Zone);
+    }).ToList();
+    foreach (var kvp in toRemove)
+    {
+      var zdo = zm.GetZDO(kvp.Key);
+      zdo?.SetOwner(0L);
+    }
+  }
+
+  static void Process(List<ZDO> objects, long uid)
   {
     foreach (ZDO zdo in objects)
     {
       if (!zdo.Persistent) continue;
+      // Unassignment is handled in PruneOwnership, so we don't need to check for that here.
+      if (zdo.HasOwner()) continue;
       // TeleportHashes or DungeonHashes are not used because clients don't need ownership of those objects.
       // If some mod needs it, the client probably already claims the ownership.
       var zdoInDungeon = zdo.m_position.y >= DungeonSplitter.DungeonHeight;
       var sameLevel = zdoInDungeon ? StateManager.InDungeon : StateManager.OnGround;
-      if (zdo.GetOwner() == uid)
-      {
-        if (!sameLevel || !ZNetScene.InActiveArea(zdo.GetSector(), zone))
-          zdo.SetOwner(0L);
-      }
-      else if (sameLevel && (!zdo.HasOwner() || !IsInPeerSameLevel(zm, zdoInDungeon, zdo.GetOwner()) || !zm.IsInPeerActiveArea(zdo.GetSector(), zdo.GetOwner())) && ZNetScene.InActiveArea(zdo.GetSector(), zone))
-      {
-        zdo.SetOwner(uid);
-      }
-    }
-  }
 
-  static bool IsInPeerSameLevel(ZDOMan zm, bool inDungeon, long uid)
-  {
-    if (uid == zm.m_sessionID) return ZNet.instance.GetReferencePosition().y >= DungeonSplitter.DungeonHeight == inDungeon;
-    ZNetPeer peer = ZNet.instance.GetPeer(uid);
-    return peer != null && peer.m_refPos.y >= DungeonSplitter.DungeonHeight == inDungeon;
+      if (sameLevel)
+        zdo.SetOwner(uid);
+    }
   }
 }
 // Client code, called 30 times per second.
@@ -289,4 +306,41 @@ public class StateManager
     }
   }
 
+}
+
+public class PlayerCache
+{
+  private static readonly Dictionary<long, PlayerCache> cache = [];
+  private static readonly HashSet<long> activePlayers = [];
+
+  public bool InDungeon;
+  public Vector2i Zone;
+
+
+  public static bool TryGet(long uid, out PlayerCache cache) => PlayerCache.cache.TryGetValue(uid, out cache);
+
+  public static void Refresh(ZDOMan zm)
+  {
+    activePlayers.Clear();
+
+    Handle(zm.m_sessionID, ZNet.instance.GetReferencePosition());
+    foreach (var peer in zm.m_peers)
+      Handle(peer.m_peer.m_uid, peer.m_peer.m_refPos);
+
+    var staleUids = cache.Keys.Where(uid => !activePlayers.Contains(uid)).ToList();
+    foreach (var staleUid in staleUids)
+      cache.Remove(staleUid);
+  }
+
+  private static void Handle(long uid, Vector3 position)
+  {
+    activePlayers.Add(uid);
+    if (!cache.TryGetValue(uid, out var info))
+    {
+      info = new PlayerCache();
+      cache[uid] = info;
+    }
+    info.InDungeon = position.y >= DungeonSplitter.DungeonHeight;
+    info.Zone = ZoneSystem.GetZone(position);
+  }
 }
