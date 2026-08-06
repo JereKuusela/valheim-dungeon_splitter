@@ -30,10 +30,18 @@ When installed on both:
 
 ## Exceptions
 
-- LocationProxy is always sent to clients and always loaded. This ensures that dungeon entrances are always loaded.
+- LocationProxy, _ZoneCtrl and_TerrainCompiler are always sent to clients and always loaded. This ensures that dungeon entrances and terrain are always loaded to allow entering and exiting them.
 - Dungeon generators and players are always sent to clients. This ensures that the dungeon floors are instantly loaded when entering a dungeon.
-- For custom dungeons, you have to add the entrance floor to the server config. Otherwise the dungeon can't be entered.
-  - For example Ice_floor is commonly used on custom dungeons.
+
+## Custom dungeons
+
+Dungeons added by other mods should work automatically.
+
+Custom dungeons that are built using regular building pieces won't work automatically because there is no LocationProxy that includes the entrance floor.
+
+These dungeons require adding the entrance floor piece to the "Always send" setting in the config. The setting is a comma separated list of prefab names.
+
+For example Ice_floor is commonly used on custom dungeons.
 
 ## Credits
 
