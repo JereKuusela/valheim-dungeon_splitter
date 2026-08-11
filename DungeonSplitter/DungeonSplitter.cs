@@ -12,7 +12,7 @@ public class DungeonSplitter : BaseUnityPlugin
 {
   public const string GUID = "dungeon_splitter";
   public const string NAME = "Dungeon Splitter";
-  public const string VERSION = "1.8";
+  public const string VERSION = "1.9";
 #nullable disable
   public static ConfigEntry<string> configAlwaysSend;
   public static ConfigEntry<float> configDungeonHeight;
@@ -122,6 +122,7 @@ public class ReleaseNearbyZDOS
     {
       var zdo = zm.GetZDO(kvp.Key);
       if (zdo == null) return true;
+      if (!zdo.Persistent) return false;
 
       var owner = zdo.GetOwner();
       if (!PlayerCache.TryGet(owner, out var ownerCache)) return true;

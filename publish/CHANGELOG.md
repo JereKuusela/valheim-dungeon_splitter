@@ -1,3 +1,6 @@
+- v1.9
+  - Fixes ownership clean up affecting non-persistent objects like players (causing loss of control).
+
 - v1.8
   - Fixes issue that assigned object ownership too eagerly (possibly causing all kind of weird issues).
   - Fixes vanilla issue that left stale ownership data (now cleaned up periodically).
@@ -10,6 +13,3 @@
 
 - v1.5
   - Possibly fixes dungeon entering issue.
-
-- v1.4
-  - Removes log spam of "Any nearby".
