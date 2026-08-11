@@ -12,7 +12,7 @@ public class DungeonSplitter : BaseUnityPlugin
 {
   public const string GUID = "dungeon_splitter";
   public const string NAME = "Dungeon Splitter";
-  public const string VERSION = "1.9";
+  public const string VERSION = "1.10";
 #nullable disable
   public static ConfigEntry<string> configAlwaysSend;
   public static ConfigEntry<float> configDungeonHeight;
@@ -66,7 +66,7 @@ public class CreateSyncList
 {
   static void Prefix(ZDOMan.ZDOPeer peer)
   {
-    StateManager.Check(peer.m_peer.m_refPos);
+    StateManager.Check(PlayerCache.GetPeerPosition(peer));
     FindObjects.IsSending = true;
   }
 }
@@ -170,7 +170,7 @@ public class CreateDestroyObjects
     {
       LastCheck = time;
       // Technically 200 meters should be enough, but it's better to be safe.
-      AnyNearby = ZNet.instance.GetPeers().Any(peer => peer.IsReady() && Utils.DistanceXZ(peer.m_refPos, pos) < 300f);
+      AnyNearby = ZNet.instance.GetPeers().Any(peer => peer.IsReady() && Utils.DistanceXZ(PlayerCache.GetPeerPosition(peer), pos) < 300f);
     }
     if (AnyNearby)
       StateManager.CheckForRemove(pos);
@@ -320,13 +320,24 @@ public class PlayerCache
 
   public static bool TryGet(long uid, out PlayerCache cache) => PlayerCache.cache.TryGetValue(uid, out cache);
 
+  // Uses character ZDO position when available because ref pos is updated only every 2 seconds.
+  public static Vector3 GetPeerPosition(ZNetPeer peer)
+  {
+    return ZDOMan.instance.GetZDO(peer.m_characterID)?.m_position ?? peer.m_refPos;
+  }
+
+  public static Vector3 GetPeerPosition(ZDOMan.ZDOPeer peer)
+  {
+    return GetPeerPosition(peer.m_peer);
+  }
+
   public static void Refresh(ZDOMan zm)
   {
     activePlayers.Clear();
 
     Handle(zm.m_sessionID, ZNet.instance.GetReferencePosition());
     foreach (var peer in zm.m_peers)
-      Handle(peer.m_peer.m_uid, peer.m_peer.m_refPos);
+      Handle(peer.m_peer.m_uid, GetPeerPosition(peer));
 
     var staleUids = cache.Keys.Where(uid => !activePlayers.Contains(uid)).ToList();
     foreach (var staleUid in staleUids)

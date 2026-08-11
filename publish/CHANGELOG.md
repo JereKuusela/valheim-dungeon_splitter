@@ -1,3 +1,6 @@
+- v1.10
+  - Fixes player position checks using "peer reference position" which is updated only every 2 seconds.
+
 - v1.9
   - Fixes ownership clean up affecting non-persistent objects like players (causing loss of control).
 
@@ -10,6 +13,3 @@
 
 - v1.6
   - Fixed for the new game version.
-
-- v1.5
-  - Possibly fixes dungeon entering issue.
