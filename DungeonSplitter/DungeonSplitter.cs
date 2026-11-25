@@ -159,23 +159,11 @@ public class ReleaseNearbyZDOS
 [HarmonyPatch(typeof(ZNetScene), nameof(ZNetScene.CreateDestroyObjects))]
 public class CreateDestroyObjects
 {
-  private static double LastCheck;
-  private static bool AnyNearby;
   static void Prefix()
   {
     if (!Player.m_localPlayer) return;
-    var time = ZNet.instance.m_netTime;
     var pos = ZNet.instance.GetReferencePosition();
-    if (time - LastCheck > 5f)
-    {
-      LastCheck = time;
-      // Technically 200 meters should be enough, but it's better to be safe.
-      AnyNearby = ZNet.instance.GetPeers().Any(peer => peer.IsReady() && Utils.DistanceXZ(PlayerCache.GetPeerPosition(peer), pos) < 300f);
-    }
-    if (AnyNearby)
-      StateManager.CheckForRemove(pos);
-    else
-      StateManager.Check(pos);
+    StateManager.Check(pos);
     FindObjects.IsSending = false;
   }
 }
@@ -216,7 +204,9 @@ public class FindObjects
 
   public static bool IsOk(ZDO zdo)
   {
-    return AlwaysLoad.Contains(zdo.m_prefab) || StateManager.IsSameLevel(zdo.m_position) || (IsSending && AlwaysSend.Contains(zdo.m_prefab));
+    // Owner is checked to delay unloading until the server has reassigned ownership.
+    // TODO: Currently broken because client never receives unassignment. Possible workaround is delaying the CreateDestroyObjects effect by few seconds?
+    return AlwaysLoad.Contains(zdo.m_prefab) || zdo.IsOwner() || StateManager.IsSameLevel(zdo.m_position) || (IsSending && AlwaysSend.Contains(zdo.m_prefab));
   }
 }
 
@@ -273,10 +263,6 @@ public class StateManager
 
   public static bool InDungeon;
   public static bool OnGround;
-  public static double LastDungeon;
-  public static double LastGround;
-
-  const double Delay = 2.5;
 
   public static bool IsSameLevel(Vector3 pos)
   {
@@ -288,23 +274,6 @@ public class StateManager
     var inDungeon = pos.y >= DungeonSplitter.DungeonHeight;
     InDungeon = inDungeon;
     OnGround = !inDungeon;
-  }
-  public static void CheckForRemove(Vector3 pos)
-  {
-    var inDungeon = pos.y >= DungeonSplitter.DungeonHeight;
-    var time = ZNet.instance.m_netTime;
-    if (inDungeon)
-    {
-      InDungeon = true;
-      LastDungeon = time;
-      OnGround = time - LastGround <= Delay;
-    }
-    else
-    {
-      OnGround = true;
-      LastGround = time;
-      InDungeon = time - LastDungeon <= Delay;
-    }
   }
 
 }
